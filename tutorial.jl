@@ -24,9 +24,13 @@ begin
 	unsafe_comparisons(true) # For error propagation, because it does not handle well comparison
 end
 
-# ╔═╡ 07850dd7-4c56-4d51-b728-d7f7b845fb88
-md"""
-Authors: R. Vezy & R. Perez
+# ╔═╡ 970e67f2-cee5-48c6-a149-abbc4d0fb58b
+html"""
+    <div style="float: right;"> 
+        <img src="https://raw.githubusercontent.com/PlantSim/PlantSim_tutorial/main/QRCode.png" alt="QRCode" style="width:100px;height:100px;">
+    </div> 
+
+Authors: R. Vezy & R. Perez.
 """
 
 # ╔═╡ 06ad25b2-ce16-11ed-2a4a-4d4e140860d9
@@ -2658,7 +2662,7 @@ version = "3.5.0+0"
 """
 
 # ╔═╡ Cell order:
-# ╟─07850dd7-4c56-4d51-b728-d7f7b845fb88
+# ╟─970e67f2-cee5-48c6-a149-abbc4d0fb58b
 # ╟─06ad25b2-ce16-11ed-2a4a-4d4e140860d9
 # ╟─b37cc679-37f0-4ac3-8db9-10174132086d
 # ╟─1435c8ba-2b40-4871-99ab-a2ffa31e09a0
