@@ -24,6 +24,11 @@ begin
 	unsafe_comparisons(true) # For error propagation, because it does not handle well comparison
 end
 
+# ╔═╡ 07850dd7-4c56-4d51-b728-d7f7b845fb88
+md"""
+Authors: R. Vezy & R. Perez
+"""
+
 # ╔═╡ 06ad25b2-ce16-11ed-2a4a-4d4e140860d9
 md"""
 # PlantBiophysics.jl tutorial
@@ -43,8 +48,18 @@ The height resulting conditions were the following:
 - DryCold: -30% relative humidity and -30% °C
 - DryHot: -30% relative humidity and +30% °C
  
-Two microcosms where used during 2 months to measure each of four plants with each condition. The two microcosms are 114cm (Width) x 113cm (Depth) x 152cm (Height) chambers with a radiation and climate control system that can precisely control the temperature, humidity, and CO2 concentration. The first microcosm was used to store the plants, always following the base conditions, and the second one was used to perform the experiment on different conditions. 
+Two microcosms where used during 2 months to measure each of four plants with each condition. The two microcosms are 114cm (Width) x 113cm (Depth) x 152cm (Height) chambers with a radiation and climate control system that can precisely control the temperature, humidity, and CO2 concentration. The first microcosm was used to store the plants, always following the base conditions, and the second one was used to perform the experiment on different conditions.
 
+Here's a some more explanations from a twitt:
+"""
+
+# ╔═╡ b37cc679-37f0-4ac3-8db9-10174132086d
+html"""
+<blockquote class="twitter-tweet"><p lang="en" dir="ltr">Our experiment with R. Perez and V. Torrelli is finally up and running! We measure CO2/H2O fluxes and temperatures for different climatic conditions (Tair, RH, light [CO2]).<a href="https://twitter.com/UmrAmap?ref_src=twsrc%5Etfw">@UmrAmap</a> <a href="https://twitter.com/AgapInstitut?ref_src=twsrc%5Etfw">@AgapInstitut</a> <a href="https://twitter.com/Cirad?ref_src=twsrc%5Etfw">@Cirad</a> <a href="https://t.co/9N9j2RxAhc">pic.twitter.com/9N9j2RxAhc</a></p>&mdash; Rémi Vezy (@VezyRemi) <a href="https://twitter.com/VezyRemi/status/1372689775111573505?ref_src=twsrc%5Etfw">March 18, 2021</a></blockquote> <script async src="https://platform.twitter.com/widgets.js" charset="utf-8"></script> 
+"""
+
+# ╔═╡ 1435c8ba-2b40-4871-99ab-a2ffa31e09a0
+md"""
 Measurements included: 
 
 - CO2 fluxes with a Picarro G2101-i, measuring the CO2 concentration in the chamber for 5 minutes, and input CO2 concentration for 5 minutes
@@ -2643,7 +2658,10 @@ version = "3.5.0+0"
 """
 
 # ╔═╡ Cell order:
+# ╟─07850dd7-4c56-4d51-b728-d7f7b845fb88
 # ╟─06ad25b2-ce16-11ed-2a4a-4d4e140860d9
+# ╟─b37cc679-37f0-4ac3-8db9-10174132086d
+# ╟─1435c8ba-2b40-4871-99ab-a2ffa31e09a0
 # ╠═f00a5e3f-71f7-43c5-abb4-01660c605974
 # ╟─25089d7c-fb55-4368-beec-deffce885558
 # ╠═cac4583c-4379-4578-9cbc-4828ccecb201
