@@ -19,6 +19,7 @@ begin
 	using PlantSimEngine, PlantMeteo, PlantBiophysics, MultiScaleTreeGraph
 	using PlantGeom, CairoMakie
 	using PlutoUI
+	using DataFrames, CSV, AlgebraOfGraphics, Statistics
 end
 
 # ╔═╡ 06ad25b2-ce16-11ed-2a4a-4d4e140860d9
@@ -69,7 +70,7 @@ Usually MTGs are written in `.mtg` files, but they can also be read from `.opf` 
 """
 
 # ╔═╡ cac4583c-4379-4578-9cbc-4828ccecb201
-mtg = read_opf("Plant_1_2021_03_15.opf")
+mtg = read_opf("data/Plant_5_2021_03_15.opf")
 
 # ╔═╡ ca53673f-db74-4cea-a105-95ea690f546b
 md"""
@@ -308,10 +309,330 @@ let
 	f_b
 end
 
+# ╔═╡ a411eb0b-947b-447d-8c94-8c73f6097536
+md"""
+## Fitting 
+
+We can fit the photosynthesis and stomatal conductance models using data acquired using a portable gas exchange analyser.
+
+### Read the data
+"""
+
+# ╔═╡ 32674587-7ac8-4edd-9449-eb0c86a13b70
+df_walz = read_walz("data/response_curve.csv")
+
+# ╔═╡ c2fd69d0-c410-4d43-a180-a022dc2ad506
+md"""
+### Farquhar model parameter fitting
+
+Here we filter the data to get only the measurements of the A-Cᵢ response curve:
+"""
+
+# ╔═╡ 310cf06d-f7e7-4058-a545-69d66c3d5329
+walz_df_CO2 = filter(x -> x.curve != "Rh Curve" && x.curve != "ligth Curve", df_walz)
+
+# ╔═╡ 5bec09cf-87be-4bcc-a6f2-5468e48ddceb
+photo = fit(Fvcb, walz_df_CO2; Tᵣ=25.0)
+
+# ╔═╡ 4a5518c9-2f3f-4bdc-9719-d913a44ead45
+let
+        m =
+            ModelList(
+                photosynthesis=FvcbRaw(
+                    VcMaxRef=photo.VcMaxRef,
+                    JMaxRef=photo.JMaxRef,
+                    RdRef=photo.RdRef,
+                    TPURef=photo.TPURef
+                ),
+                status=(Tₗ=walz_df_CO2.Tₗ, PPFD=walz_df_CO2.PPFD, Cᵢ=walz_df_CO2.Cᵢ)
+            )
+
+        run!(m)
+
+        df_sim = rename!(DataFrame(m), :Tₗ => :Tₗ_sim, :Cᵢ => :Cᵢ_sim, :A => :A_sim)
+        df_sim.Date = walz_df_CO2.Date
+        df_sim.Cᵢ = walz_df_CO2.Cᵢ
+        df_sim.A = walz_df_CO2.A
+		sort!(df_sim, :Cᵢ)
+
+	    p = data(df_sim) *
+        mapping(:Cᵢ => "Cᵢ (ppm)", :A => "A (μmol m⁻² s⁻¹)")
+    p_sim = data(df_sim) *
+            mapping(:Cᵢ_sim => "Cᵢ (ppm)", :A_sim => "A (μmol m⁻² s⁻¹)") *
+            visual(Lines)
+
+    draw(p + p_sim)
+end
+
+# ╔═╡ 40ed0f15-7483-4718-b257-d795da34dc40
+md"""
+### Medlyn's model parameter fitting
+
+Here we filter the data to get only the measurements of the A-Cᵢ response curve:
+"""
+
+# ╔═╡ a690a1d8-388f-443f-88fd-14458301809f
+walz_df_Gs = filter(x -> x.curve != "ligth Curve" && x.curve != "CO2 Curve", df_walz)
+
+# ╔═╡ d592077e-a9f1-42a8-9a14-e775d485d526
+g0, g1 = fit(Medlyn, walz_df_Gs)
+
+# ╔═╡ 0835317e-2a80-44fe-a0da-142c2328ab1c
+let
+	w = Weather(select(walz_df_Gs, :T, :P, :Rh, :Cₐ, :VPD, :T => (x -> 10) => :Wind))
+	m = ModelList(
+		stomatal_conductance=Medlyn(g0, g1),
+		status=(A=walz_df_Gs.A, Cₛ=walz_df_Gs.Cₐ, Dₗ=walz_df_Gs.Dₗ)
+	)
+	run!(m, w)
+
+	df_sim = rename!(DataFrame(m), :Gₛ => :Gₛ_sim)
+	df_sim.Date = walz_df_Gs.Date
+	df_sim.Gₛ = walz_df_Gs.Gₛ
+	df_sim.Dₗ = walz_df_Gs.Dₗ
+	df_sim.Cₐ = walz_df_Gs.Cₐ
+	df_sim.A = walz_df_Gs.A
+
+	transform!(
+        df_sim,
+        [:A, :Cₐ, :Dₗ] => ((A, Ca, Dl) -> A ./ (Ca .* sqrt.(Dl))) => "A/(Cₐ√Dₗ) (ppm)"
+    )
+
+    p = data(df_sim) *
+        mapping("A/(Cₐ√Dₗ) (ppm)", :Gₛ => "Gₛ (mol m⁻² s⁻¹)")
+    p_sim = data(df_sim) *
+            mapping("A/(Cₐ√Dₗ) (ppm)", :Gₛ_sim => "Gₛ (mol m⁻² s⁻¹)") *
+            visual(Lines)
+
+    draw(p + p_sim)
+end
+
 # ╔═╡ 290d4b28-3bc0-4d6e-9989-0442934f9123
 md"""
 ## Modelling
+
+### Simulating a leaf
 """
+
+# ╔═╡ 4f73eed5-4e02-428f-9c64-655418794f79
+weather = Weather(transform(walz_df_CO2, :Date => (x -> 10.0) => :Wind))
+
+# ╔═╡ ed9e7681-63d7-4f76-b6c5-623e50198c46
+model =
+	ModelList(
+		Monteith(),
+		FvcbRaw(
+			VcMaxRef=photo.VcMaxRef,
+			JMaxRef=photo.JMaxRef,
+			RdRef=photo.RdRef,
+			TPURef=photo.TPURef
+		),
+		Medlyn(g0, g1),
+	);
+
+# ╔═╡ aab3e5a3-8ad8-4792-b23f-eb55df4176e9
+begin
+	model_full =
+		ModelList(
+			Monteith(),
+			FvcbRaw(
+				VcMaxRef=photo.VcMaxRef,
+				JMaxRef=photo.JMaxRef,
+				RdRef=photo.RdRef,
+				TPURef=photo.TPURef
+			),
+			Medlyn(g0, g1),
+			status=(Rₛ=walz_df_CO2.PPFD ./ 4.57, PPFD=walz_df_CO2.PPFD, d=0.03, sky_fraction = 1),
+		);
+	
+	run!(model_full, weather)
+	
+	DataFrame(model_full)
+end
+
+# ╔═╡ d9df9233-59d6-4443-85aa-be5d7c3244fd
+md"""
+### Simulation on a 3D plant
+"""
+
+# ╔═╡ 4291ee19-03dd-4a4d-8b6d-c0c662a6003e
+md"""
+First, we need to read our data from disk:
+"""
+
+# ╔═╡ 9c144834-58de-4e1c-9de7-11bd775c416e
+weather_data = CSV.read("data/weather.csv", DataFrame)
+
+# ╔═╡ 3b7fa687-be37-412d-962b-5d82a786642d
+md"""
+Now that we have the data, we can optionally transform it into a much more performant version of DataFrame, a TimeStepTable (from `PlantMeteo`):
+"""
+
+# ╔═╡ 3ae4ecdf-d77f-4887-ba59-8e9b3b43220a
+weather_sequence = TimeStepTable{Atmosphere}(weather_data)
+
+# ╔═╡ e61c9581-eaf4-43d8-b22c-88e7b9e280b8
+md"""
+The `TimeStepTable` is not only more performant, it also computes standard variables if they are not present in the data, such as `VPD` or `e`. You can get all variable names using the `keys` function:
+"""
+
+# ╔═╡ 170b159c-a61b-42aa-94d4-0eeca38239a4
+keys(weather_sequence)
+
+# ╔═╡ 06499553-5aaf-4eaa-b32a-514d1064da05
+md"""
+Then we can define some constants and parameters:
+"""
+
+# ╔═╡ 46290b61-b97d-4deb-9efb-8d6c79637710
+begin
+c = Constants()
+lamp_radiation = 142.0 # W/m², the lamp produces 142.0 W/m² at full capacity
+chamber_wind = 10.0 # m/s, the wind speed in the chamber
+length_to_width_ratio = 3.0 # the length to width ratio of the leaves
+end
+
+# ╔═╡ e8270523-6ad3-4b0e-bd07-7d6ca9e63b4a
+md"""
+Then we need to initialize the models for the mtg. To do so, we have to define which models will be associated to each type of node in the MTG. We want to simulate the leaves here so we only given models for them:
+"""
+
+# ╔═╡ b3e1c1cc-8021-46b1-91c0-26fc57a9f1f1
+nodes_models = Dict(
+	"Leaf" => ModelList(
+		Monteith(),
+		Fvcb(Tᵣ=25.0, VcMaxRef=photo.VcMaxRef, JMaxRef=photo.JMaxRef, RdRef=photo.RdRef, TPURef=photo.TPURef),
+		Medlyn(g0=g0, g1=g1),
+		variables_check=false,
+	)
+);
+
+# ╔═╡ 346e2d1e-fcf5-4cee-8f0a-c01b8a993bb2
+md"""
+Now that we have the models, we can initialize our mtg with the models. To do so, we can use `init_mtg_models!`, and give the mtg and the models as inputs, and also the number of time-steps we will simulate (for pre-allocation). 
+
+In this step, we consider that the variables that are not initialized in the `ModelList` are read from the MTG attributes. So if we provide the ModelList just like this, we'll get an error:
+"""
+
+# ╔═╡ 65590e46-ded3-474b-9461-544dff534025
+mtg_2 = let
+	init_mtg_models!(deepcopy(mtg), nodes_models, length(weather_sequence))
+end
+
+# ╔═╡ 2c9546c0-aaf1-4fcd-8ddf-3af13d4e1f08
+md"""
+So what we need to do now is to either give the initialization values in the ModelList, or in the mtg. 
+
+Let's add them into the mtg then:
+"""
+
+# ╔═╡ 675a237e-c255-43d9-9c24-d7182e141250
+mtg_3 = let
+	mtg_3 = deepcopy(mtg)
+	traverse!(mtg_3) do node
+        if node.MTG.symbol == "Leaf"
+            node[:date] = weather_sequence.date
+            node[:duration] = weather_sequence.duration
+			# We take the width as 1/3 of the length of the leaf
+            node[:d] = sqrt(node[:area] / length_to_width_ratio) 
+			# The light intercepted is given as the light interception at maximum lamp capacity weighted by the PAR instruction in the chamber:
+            node[:Rₛ] = node[:Ra_PAR_f] .* weather_sequence.PAR_instruction
+			# Convert from W/m² to umol/m²/s, we have 0 NIR here, so Ra_PAR_f = Rₛ
+            node[:PPFD] = node[:Rₛ] .* c.J_to_umol 
+        end
+    end
+	mtg_3
+end
+
+# ╔═╡ 5f4a53ca-e282-46bf-a1d3-90531d142dd6
+md"""
+Now our MTG is ready to be initialized and run:
+"""
+
+# ╔═╡ 0bba4403-09e9-4091-874b-2a2f22055d4b
+mtg_4 = let
+	mtg_4 = deepcopy(mtg_3)
+	init_mtg_models!(mtg_4, nodes_models, length(weather_sequence), verbose=false)
+	run!(mtg_4, weather_sequence, c) # 0.003s == 3ms for 3 days
+	mtg_4
+end
+
+# ╔═╡ ed5096f5-1830-4bf8-b828-7b4f15a5e802
+md"""
+And now we can visualize our simulated variables using `viz`.
+
+You can choose the date of visualization using the slider below:
+
+$(@bind ts PlutoUI.Slider(1:length(weather_sequence))) 
+"""
+
+# ╔═╡ 9bfaeb81-9615-408d-9e2d-fcf1bbdf1f68
+md"""
+$(weather_sequence.date[ts])
+"""
+
+# ╔═╡ 07a28c48-441f-4474-b506-83408461c42e
+viz(mtg_4, color = :A, index = ts)
+
+# ╔═╡ 537d9b6a-e7b8-4bd0-a5f5-13e36888ec8e
+md"""
+### Evaluation
+"""
+
+# ╔═╡ 01cf3fc3-4932-4c62-9545-e80f8e2bda4d
+md"""
+First we extract our simulations results from the MTG:
+"""
+
+# ╔═╡ 04588278-23c4-4107-95a2-265a587d8bf8
+df_sim = 
+	let
+	df_sim = DataFrame(mtg_4, [:date, :duration, :area, :Ra_PAR_f, :PPFD, :Rₛ, :A, :Tₗ, :λE])
+	filter!(x -> x.symbol == "Leaf", df_sim)
+	df = DataFrame[]
+    for row in eachrow(df_sim)
+        push!(
+            df,
+            DataFrame(
+                date=row.date, duration=row.duration, 
+                area=row.area, Ra_PAR_f=row.Ra_PAR_f,
+                PPFD=row.PPFD, Rₛ=row.Rₛ, A=row.A, Tₗ=row.Tₗ, λE=row.λE
+            )
+        )
+    end
+    df_sim = vcat(df...)
+
+	df_sim_plant =
+		combine(
+			groupby(df_sim, :date),
+			:area => sum => :area_sim,
+			:Ra_PAR_f => mean => :Ra_PAR_f_sim, # W m-2
+			:PPFD => mean => :PPFD_sim, # W m-2
+			:Rₛ => mean => :Rₛ_sim, # W m-2
+			[:A, :area] => ((A, area) -> sum(A .* area)) => :A_sim_umol_s, # μmol plant-1 s-1
+			[:λE, :area] => ((λE, area) -> sum(λE .* area)) => :λE_sim_mol_s, # J plant-1 s-1
+		)
+
+    df_full = leftjoin(DataFrame(weather_sequence), df_sim_plant, on=:date)
+
+    transform!(
+        df_full,
+        [:λE_sim_mol_s, :λ] => ((λE, λ) -> λE ./ λ .* 1e3) => :Tr_sim_g_s, # g[H2O] plant-1 s-1
+    )	
+end
+
+# ╔═╡ dcda2553-9228-4597-80d8-75656accb1bd
+let	
+	p_obs = data(dropmissing(df_sim, :CO2_outflux_umol_s)) *
+		mapping(:date, :CO2_outflux_umol_s => "Assimilation (μmol m⁻² s⁻¹)") *
+		visual(Scatter)
+	p_sim = data(dropmissing(df_sim, :A_sim_umol_s)) *
+		mapping(:date, :A_sim_umol_s => "Assimilation (μmol m⁻² s⁻¹)") *
+		visual(Lines)
+
+	(p_obs + p_sim) |> draw
+	#, :Tr_sim_g_s => "Simulation"
+end
 
 # ╔═╡ db42d5fe-28bb-4537-8603-61eaec67ce8b
 md"""
@@ -321,22 +642,26 @@ md"""
 # ╔═╡ 03d20f0d-7bb0-4170-aee2-de6c86c41532
 TableOfContents(title="📚 Table of Contents", indent=true, depth=4, aside=true)
 
-# ╔═╡ 06a48d91-3945-4dda-88b5-7091a96ffd88
-pwd()
-
 # ╔═╡ 00000000-0000-0000-0000-000000000001
 PLUTO_PROJECT_TOML_CONTENTS = """
 [deps]
+AlgebraOfGraphics = "cbdf2221-f076-402e-a563-3d30da359d67"
+CSV = "336ed68f-0bac-5ca0-87d4-7b16caf5d00b"
 CairoMakie = "13f3f980-e62b-5c42-98c6-ff1f3baf88f0"
+DataFrames = "a93c6f00-e57d-5684-b7b6-d8193f3e46c0"
 MultiScaleTreeGraph = "dd4a991b-8a45-4075-bede-262ee62d5583"
 PlantBiophysics = "7ae8fcfa-76ad-4ec6-9ea7-5f8f5e2d6ec9"
 PlantGeom = "5edaa67e-25db-4eb9-bf81-05d793b2238d"
 PlantMeteo = "4630fe09-e0fb-4da5-a846-781cb73437b6"
 PlantSimEngine = "9a576370-710b-4269-adf9-4f603a9c6423"
 PlutoUI = "7f904dfe-b85e-4ff6-b463-dae2292396a8"
+Statistics = "10745b16-79ce-11e8-11f9-7d13ad32a3b2"
 
 [compat]
+AlgebraOfGraphics = "~0.6.14"
+CSV = "~0.10.9"
 CairoMakie = "~0.10.3"
+DataFrames = "~1.5.0"
 MultiScaleTreeGraph = "~0.10.1"
 PlantBiophysics = "~0.9.2"
 PlantGeom = "~0.5.3"
@@ -351,7 +676,7 @@ PLUTO_MANIFEST_TOML_CONTENTS = """
 
 julia_version = "1.8.2"
 manifest_format = "2.0"
-project_hash = "33eb62f0d1b385513ff1c1e8a144a3d9cf5a8318"
+project_hash = "a692d1568a19a51aee763c56e98e24c23defa608"
 
 [[deps.AbstractFFTs]]
 deps = ["ChainRulesCore", "LinearAlgebra"]
@@ -375,6 +700,12 @@ deps = ["LinearAlgebra", "Requires"]
 git-tree-sha1 = "cc37d689f599e8df4f464b2fa3870ff7db7492ef"
 uuid = "79e6a3ab-5dfb-504d-930d-738a2a938a0e"
 version = "3.6.1"
+
+[[deps.AlgebraOfGraphics]]
+deps = ["Colors", "Dates", "Dictionaries", "FileIO", "GLM", "GeoInterface", "GeometryBasics", "GridLayoutBase", "KernelDensity", "Loess", "Makie", "PlotUtils", "PooledArrays", "RelocatableFolders", "SnoopPrecompile", "StatsBase", "StructArrays", "Tables"]
+git-tree-sha1 = "43c2ef89ca0cdaf77373401a989abae4410c7b8a"
+uuid = "cbdf2221-f076-402e-a563-3d30da359d67"
+version = "0.6.14"
 
 [[deps.Animations]]
 deps = ["Colors"]
@@ -649,6 +980,12 @@ git-tree-sha1 = "80c3e8639e3353e5d2912fb3a1916b8455e2494b"
 uuid = "b429d917-457f-4dbc-8f4c-0cc954292b1d"
 version = "0.4.0"
 
+[[deps.Dictionaries]]
+deps = ["Indexing", "Random", "Serialization"]
+git-tree-sha1 = "e82c3c97b5b4ec111f3c1b55228cebc7510525a2"
+uuid = "85a47980-9c8c-11e8-2b9f-f7ca1fa99fb4"
+version = "0.3.25"
+
 [[deps.DiffResults]]
 deps = ["StaticArraysCore"]
 git-tree-sha1 = "782dd5f4561f5d267313f23853baaaa4c52ea621"
@@ -832,6 +1169,12 @@ version = "1.0.10+0"
 deps = ["Random"]
 uuid = "9fa8497b-333b-5362-9e8d-4d0656e87820"
 
+[[deps.GLM]]
+deps = ["Distributions", "LinearAlgebra", "Printf", "Reexport", "SparseArrays", "SpecialFunctions", "Statistics", "StatsAPI", "StatsBase", "StatsFuns", "StatsModels"]
+git-tree-sha1 = "cd3e314957dc11c4c905d54d1f5a65c979e4748a"
+uuid = "38e38edf-8417-5370-95a0-9cbb8c7f171a"
+version = "1.8.2"
+
 [[deps.GPUArraysCore]]
 deps = ["Adapt"]
 git-tree-sha1 = "1cd7f0af1aa58abc02ea1d872953a97359cb87fa"
@@ -968,6 +1311,11 @@ deps = ["Artifacts", "JLLWrappers", "Libdl"]
 git-tree-sha1 = "3d09a9f60edf77f8a4d99f9e015e8fbf9989605d"
 uuid = "905a6f67-0a94-5f89-b386-d35d92009cd1"
 version = "3.1.7+0"
+
+[[deps.Indexing]]
+git-tree-sha1 = "ce1566720fd6b19ff3411404d4b977acd4814f9f"
+uuid = "313cdc1a-70c2-5d6a-ae34-0150d3930a38"
+version = "1.1.1"
 
 [[deps.IndirectArrays]]
 git-tree-sha1 = "012e604e1c7458645cb8b436f8fba789a51b257f"
@@ -1178,6 +1526,12 @@ version = "2.36.0+0"
 [[deps.LinearAlgebra]]
 deps = ["Libdl", "libblastrampoline_jll"]
 uuid = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
+
+[[deps.Loess]]
+deps = ["Distances", "LinearAlgebra", "Statistics"]
+git-tree-sha1 = "46efcea75c890e5d820e670516dc156689851722"
+uuid = "4345ca2d-374a-55d4-8d30-97f9976e7612"
+version = "0.5.4"
 
 [[deps.LogExpFunctions]]
 deps = ["ChainRulesCore", "ChangesOfVariables", "DocStringExtensions", "InverseFunctions", "IrrationalConstants", "LinearAlgebra"]
@@ -1718,6 +2072,11 @@ version = "1.1.1"
 deps = ["Distributed", "Mmap", "Random", "Serialization"]
 uuid = "1a1011a3-84de-559e-8e89-a11a2f7dc383"
 
+[[deps.ShiftedArrays]]
+git-tree-sha1 = "503688b59397b3307443af35cd953a13e8005c16"
+uuid = "1277b4bf-5013-50f5-be3d-901d8477a67a"
+version = "2.0.0"
+
 [[deps.Showoff]]
 deps = ["Dates", "Grisu"]
 git-tree-sha1 = "91eddf657aca81df9ae6ceb20b959ae5653ad1de"
@@ -1828,6 +2187,12 @@ deps = ["ChainRulesCore", "HypergeometricFunctions", "InverseFunctions", "Irrati
 git-tree-sha1 = "f625d686d5a88bcd2b15cd81f18f98186fdc0c9a"
 uuid = "4c63d2b9-4356-54db-8cca-17b64c39e42c"
 version = "1.3.0"
+
+[[deps.StatsModels]]
+deps = ["DataAPI", "DataStructures", "LinearAlgebra", "Printf", "REPL", "ShiftedArrays", "SparseArrays", "StatsBase", "StatsFuns", "Tables"]
+git-tree-sha1 = "06a230063087c11910e9bbd17ccbf5af792a27a4"
+uuid = "3eaba693-59b7-5ba5-a881-562e759f1c8d"
+version = "0.7.0"
 
 [[deps.StringEncodings]]
 deps = ["Libiconv_jll"]
@@ -2180,9 +2545,45 @@ version = "3.5.0+0"
 # ╟─0a9c9f38-a86a-481e-8fb1-f9ae7b9db4c2
 # ╟─cf632773-4ba6-4dbb-99d0-3cfe6aceaedd
 # ╟─7c4e803c-b085-4b83-a991-db7850970ae4
+# ╟─a411eb0b-947b-447d-8c94-8c73f6097536
+# ╠═32674587-7ac8-4edd-9449-eb0c86a13b70
+# ╟─c2fd69d0-c410-4d43-a180-a022dc2ad506
+# ╠═310cf06d-f7e7-4058-a545-69d66c3d5329
+# ╠═5bec09cf-87be-4bcc-a6f2-5468e48ddceb
+# ╟─4a5518c9-2f3f-4bdc-9719-d913a44ead45
+# ╟─40ed0f15-7483-4718-b257-d795da34dc40
+# ╠═a690a1d8-388f-443f-88fd-14458301809f
+# ╠═d592077e-a9f1-42a8-9a14-e775d485d526
+# ╟─0835317e-2a80-44fe-a0da-142c2328ab1c
 # ╟─290d4b28-3bc0-4d6e-9989-0442934f9123
+# ╠═4f73eed5-4e02-428f-9c64-655418794f79
+# ╠═ed9e7681-63d7-4f76-b6c5-623e50198c46
+# ╠═aab3e5a3-8ad8-4792-b23f-eb55df4176e9
+# ╟─d9df9233-59d6-4443-85aa-be5d7c3244fd
+# ╟─4291ee19-03dd-4a4d-8b6d-c0c662a6003e
+# ╠═9c144834-58de-4e1c-9de7-11bd775c416e
+# ╟─3b7fa687-be37-412d-962b-5d82a786642d
+# ╠═3ae4ecdf-d77f-4887-ba59-8e9b3b43220a
+# ╟─e61c9581-eaf4-43d8-b22c-88e7b9e280b8
+# ╠═170b159c-a61b-42aa-94d4-0eeca38239a4
+# ╟─06499553-5aaf-4eaa-b32a-514d1064da05
+# ╠═46290b61-b97d-4deb-9efb-8d6c79637710
+# ╟─e8270523-6ad3-4b0e-bd07-7d6ca9e63b4a
+# ╠═b3e1c1cc-8021-46b1-91c0-26fc57a9f1f1
+# ╟─346e2d1e-fcf5-4cee-8f0a-c01b8a993bb2
+# ╠═65590e46-ded3-474b-9461-544dff534025
+# ╟─2c9546c0-aaf1-4fcd-8ddf-3af13d4e1f08
+# ╠═675a237e-c255-43d9-9c24-d7182e141250
+# ╟─5f4a53ca-e282-46bf-a1d3-90531d142dd6
+# ╠═0bba4403-09e9-4091-874b-2a2f22055d4b
+# ╟─ed5096f5-1830-4bf8-b828-7b4f15a5e802
+# ╟─9bfaeb81-9615-408d-9e2d-fcf1bbdf1f68
+# ╠═07a28c48-441f-4474-b506-83408461c42e
+# ╟─537d9b6a-e7b8-4bd0-a5f5-13e36888ec8e
+# ╟─01cf3fc3-4932-4c62-9545-e80f8e2bda4d
+# ╠═04588278-23c4-4107-95a2-265a587d8bf8
+# ╠═dcda2553-9228-4597-80d8-75656accb1bd
 # ╟─db42d5fe-28bb-4537-8603-61eaec67ce8b
 # ╠═03d20f0d-7bb0-4170-aee2-de6c86c41532
-# ╠═06a48d91-3945-4dda-88b5-7091a96ffd88
 # ╟─00000000-0000-0000-0000-000000000001
 # ╟─00000000-0000-0000-0000-000000000002
