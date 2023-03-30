@@ -578,7 +578,11 @@ $(weather_sequence.date[ts])
 """
 
 # ╔═╡ 07a28c48-441f-4474-b506-83408461c42e
-viz(mtg_4, color = :A, index = ts)
+begin
+	f4,a4,p4 = viz(mtg_4, color = :A, index = ts)
+	colorbar(f4[1,2], p4)
+	f4
+end
 
 # ╔═╡ 537d9b6a-e7b8-4bd0-a5f5-13e36888ec8e
 md"""
@@ -2726,7 +2730,7 @@ version = "3.5.0+0"
 # ╠═0bba4403-09e9-4091-874b-2a2f22055d4b
 # ╟─ed5096f5-1830-4bf8-b828-7b4f15a5e802
 # ╟─9bfaeb81-9615-408d-9e2d-fcf1bbdf1f68
-# ╠═07a28c48-441f-4474-b506-83408461c42e
+# ╟─07a28c48-441f-4474-b506-83408461c42e
 # ╟─537d9b6a-e7b8-4bd0-a5f5-13e36888ec8e
 # ╟─01cf3fc3-4932-4c62-9545-e80f8e2bda4d
 # ╠═04588278-23c4-4107-95a2-265a587d8bf8
