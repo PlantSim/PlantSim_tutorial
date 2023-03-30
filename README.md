@@ -20,5 +20,5 @@ pkg> add Pluto
 - then, run the notebook:
 
 ```julia
-julia> using Pluto; Pluto.run(url="https://raw.githubusercontent.com/PlantSim/PlantSim_tutorial/main/tutorial.jl")
+julia> using Pluto; Pluto.run(notebook="https://raw.githubusercontent.com/PlantSim/PlantSim_tutorial/main/tutorial.jl")
 ```
